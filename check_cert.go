@@ -20,7 +20,7 @@ func checkCertExpiry(url string) error {
 				InsecureSkipVerify: true, // We don't need to verify the server's certificate
 			},
 		},
-		Timeout: 5 * time.Second, // Set a timeout for the HTTP client
+		Timeout: 3 * time.Second, // Set a timeout for the HTTP client
 	}
 
 	// Make a request to the URL
@@ -58,7 +58,7 @@ func checkCertExpiry(url string) error {
 	return nil
 }
 
-// readURLsFromFile reads URLs from a file, one per line.
+// readURLsFromFile reads URLs from a file, one per line, and removes duplicates.
 func readURLsFromFile(filename string) ([]string, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -67,11 +67,15 @@ func readURLsFromFile(filename string) ([]string, error) {
 	defer file.Close()
 
 	var urls []string
+	urlSet := make(map[string]struct{})
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		url := strings.TrimSpace(scanner.Text())
 		if url != "" && !strings.HasPrefix(url, "#") { // Skip empty lines and lines starting with '#'
-			urls = append(urls, url)
+			if _, exists := urlSet[url]; !exists {
+				urls = append(urls, url)
+				urlSet[url] = struct{}{}
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
