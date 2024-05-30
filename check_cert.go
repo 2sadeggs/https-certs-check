@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -50,19 +52,55 @@ func checkCertExpiry(url string) error {
 		return fmt.Errorf("certificate has expired: valid until %s", cert.NotAfter)
 	}
 
-	fmt.Printf("Certificate is valid: valid from %s to %s\n", cert.NotBefore, cert.NotAfter)
+	fmt.Printf("Certificate for %s is valid: valid from %s to %s\n", url, cert.NotBefore, cert.NotAfter)
 	return nil
 }
 
+// readURLsFromFile reads URLs from a file, one per line.
+func readURLsFromFile(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	var urls []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		url := scanner.Text()
+		if url != "" {
+			urls = append(urls, url) // Correct usage of append
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading file: %v", err)
+	}
+	return urls, nil
+}
+
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Println("Usage: check_cert <url>")
+	// Define command-line flags
+	fileFlag := flag.String("file", "", "Path to the file containing the list of URLs")
+	flag.Parse()
+
+	// Validate flags
+	if *fileFlag == "" {
+		fmt.Println("Usage: check_cert -file <path_to_file>")
 		os.Exit(1)
 	}
-	url := os.Args[1]
 
-	if err := checkCertExpiry(url); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	// Read URLs from the file
+	urls, err := readURLsFromFile(*fileFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading URLs from file: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Check each URL's certificate
+	for _, url := range urls {
+		fmt.Printf("Checking certificate for %s...\n", url)
+		if err := checkCertExpiry(url); err != nil {
+			fmt.Fprintf(os.Stderr, "Error checking certificate for %s: %v\n", url, err)
+		}
 	}
 }
