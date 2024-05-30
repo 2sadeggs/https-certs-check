@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -84,6 +85,17 @@ func readURLsFromFile(filename string) ([]string, error) {
 	return urls, nil
 }
 
+// worker function to check certificates concurrently
+func worker(urls <-chan string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for url := range urls {
+		fmt.Printf("Checking certificate for %s...\n", url)
+		if err := checkCertExpiry(url); err != nil {
+			fmt.Fprintf(os.Stderr, "Error checking certificate for %s: %v\n", url, err)
+		}
+	}
+}
+
 func main() {
 	// Define command-line flags
 	fileFlag := flag.String("file", "", "Path to the file containing the list of URLs")
@@ -102,11 +114,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Check each URL's certificate
-	for _, url := range urls {
-		fmt.Printf("Checking certificate for %s...\n", url)
-		if err := checkCertExpiry(url); err != nil {
-			fmt.Fprintf(os.Stderr, "Error checking certificate for %s: %v\n", url, err)
-		}
+	// Create a channel to send URLs to workers
+	urlChan := make(chan string)
+
+	// Use a wait group to wait for all workers to finish
+	var wg sync.WaitGroup
+
+	// Start a number of workers
+	numWorkers := 10 // Number of concurrent workers
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go worker(urlChan, &wg)
 	}
+
+	// Send URLs to the workers
+	for _, url := range urls {
+		urlChan <- url
+	}
+
+	// Close the channel and wait for all workers to finish
+	close(urlChan)
+	wg.Wait()
 }
