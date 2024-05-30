@@ -7,18 +7,20 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 // checkCertExpiry retrieves the certificate from the provided URL and checks its validity period.
 func checkCertExpiry(url string) error {
-	// Create an HTTP client with a custom transport
+	// Create an HTTP client with a custom transport and timeout
 	client := &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true, // We don't need to verify the server's certificate
 			},
 		},
+		Timeout: 5 * time.Second, // Set a timeout for the HTTP client
 	}
 
 	// Make a request to the URL
@@ -67,9 +69,9 @@ func readURLsFromFile(filename string) ([]string, error) {
 	var urls []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		url := scanner.Text()
-		if url != "" {
-			urls = append(urls, url) // Correct usage of append
+		url := strings.TrimSpace(scanner.Text())
+		if url != "" && !strings.HasPrefix(url, "#") { // Skip empty lines and lines starting with '#'
+			urls = append(urls, url)
 		}
 	}
 	if err := scanner.Err(); err != nil {
