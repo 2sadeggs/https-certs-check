@@ -98,14 +98,9 @@ func worker(urls <-chan string, wg *sync.WaitGroup) {
 
 func main() {
 	// Define command-line flags
-	fileFlag := flag.String("file", "", "Path to the file containing the list of URLs")
+	fileFlag := flag.String("file", "uris.txt", "Path to the file containing the list of URLs (default: uris.txt)")
+	workersFlag := flag.Int("workers", 10, "Number of concurrent workers (default: 10)")
 	flag.Parse()
-
-	// Validate flags
-	if *fileFlag == "" {
-		fmt.Println("Usage: check_cert -file <path_to_file>")
-		os.Exit(1)
-	}
 
 	// Read URLs from the file
 	urls, err := readURLsFromFile(*fileFlag)
@@ -121,7 +116,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Start a number of workers
-	numWorkers := 10 // Number of concurrent workers
+	numWorkers := *workersFlag // Number of concurrent workers
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go worker(urlChan, &wg)
