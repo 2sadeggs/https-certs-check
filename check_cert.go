@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// checkCertExpiry retrieves the certificate from the provided URL and checks its validity period.
-func checkCertExpiry(url string, timeout time.Duration) error {
+// checkCertExpiry retrieves the certificate from the provided URL and checks if it's expiring within n days.
+func checkCertExpiry(url string, timeout time.Duration, daysUntilExpiry int) error {
 	// Create an HTTP client with a custom transport and timeout
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -46,16 +46,12 @@ func checkCertExpiry(url string, timeout time.Duration) error {
 	// Use the first certificate (typically the leaf certificate)
 	cert := certs[0]
 
-	// Check the certificate's validity period
-	now := time.Now()
-	if now.Before(cert.NotBefore) {
-		return fmt.Errorf("certificate is not yet valid: valid from %s", cert.NotBefore)
-	}
-	if now.After(cert.NotAfter) {
-		return fmt.Errorf("certificate has expired: valid until %s", cert.NotAfter)
+	// Check if the certificate is expiring within n days
+	daysRemaining := int(cert.NotAfter.Sub(time.Now()).Hours() / 24)
+	if daysRemaining <= daysUntilExpiry && daysRemaining >= 0 {
+		fmt.Printf("Certificate for %s is expiring in %d days: valid from %s to %s\n", url, daysRemaining, cert.NotBefore, cert.NotAfter)
 	}
 
-	fmt.Printf("Certificate for %s is valid: valid from %s to %s\n", url, cert.NotBefore, cert.NotAfter)
 	return nil
 }
 
@@ -86,11 +82,11 @@ func readURLsFromFile(filename string) ([]string, error) {
 }
 
 // worker function to check certificates concurrently
-func worker(urls <-chan string, timeout time.Duration, wg *sync.WaitGroup) {
+func worker(urls <-chan string, timeout time.Duration, daysUntilExpiry int, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for url := range urls {
 		fmt.Printf("Checking certificate for %s...\n", url)
-		if err := checkCertExpiry(url, timeout); err != nil {
+		if err := checkCertExpiry(url, timeout, daysUntilExpiry); err != nil {
 			fmt.Fprintf(os.Stderr, "Error checking certificate for %s: %v\n", url, err)
 		}
 	}
@@ -101,6 +97,7 @@ func main() {
 	fileFlag := flag.String("file", "uris.txt", "Path to the file containing the list of URLs (default: uris.txt)")
 	workersFlag := flag.Int("workers", 10, "Number of concurrent workers (default: 10)")
 	timeoutFlag := flag.Int("timeout", 3, "HTTP request timeout in seconds (default: 3)")
+	daysFlag := flag.Int("days", 30, "Number of days within which the certificate will expire (default: 30)")
 	flag.Parse()
 
 	// Convert timeoutFlag to time.Duration
@@ -123,7 +120,7 @@ func main() {
 	numWorkers := *workersFlag // Number of concurrent workers
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go worker(urlChan, timeout, &wg)
+		go worker(urlChan, timeout, *daysFlag, &wg)
 	}
 
 	// Send URLs to the workers
