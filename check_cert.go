@@ -12,8 +12,34 @@ import (
 	"time"
 )
 
+// checkSiteHealth checks if the site is reachable by making a simple HTTP GET request.
+func checkSiteHealth(url string, timeout time.Duration) error {
+	client := &http.Client{
+		Timeout: timeout,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("site is not reachable: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("site returned non-200 status: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 // checkCertExpiry retrieves the certificate from the provided URL and checks if it's expiring within n days.
-func checkCertExpiry(url string, timeout time.Duration, daysUntilExpiry int) error {
+func checkCertExpiry(url string, timeout time.Duration, daysUntilExpiry int, checkHealth bool) error {
+	// First check if the site is reachable if the checkHealth flag is set
+	if checkHealth {
+		if err := checkSiteHealth(url, timeout); err != nil {
+			return err
+		}
+	}
+
 	// Create an HTTP client with a custom transport and timeout
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -86,11 +112,11 @@ func readURLsFromFile(filename string) ([]string, error) {
 }
 
 // worker function to check certificates concurrently
-func worker(urls <-chan string, timeout time.Duration, daysUntilExpiry int, wg *sync.WaitGroup) {
+func worker(urls <-chan string, timeout time.Duration, daysUntilExpiry int, checkHealth bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for url := range urls {
 		fmt.Printf("Checking certificate for %s...\n", url)
-		if err := checkCertExpiry(url, timeout, daysUntilExpiry); err != nil {
+		if err := checkCertExpiry(url, timeout, daysUntilExpiry, checkHealth); err != nil {
 			fmt.Fprintf(os.Stderr, "Error checking certificate for %s: %v\n", url, err)
 		}
 	}
@@ -102,6 +128,7 @@ func main() {
 	workersFlag := flag.Int("workers", 10, "Number of concurrent workers (default: 10)")
 	timeoutFlag := flag.Int("timeout", 3, "HTTP request timeout in seconds (default: 3)")
 	daysFlag := flag.Int("days", 30, "Number of days within which the certificate will expire (default: 30)")
+	checkHealthFlag := flag.Bool("check-health", false, "Check if the site is reachable before checking certificate expiry (default: false)")
 	flag.Parse()
 
 	// Convert timeoutFlag to time.Duration
@@ -124,7 +151,7 @@ func main() {
 	numWorkers := *workersFlag // Number of concurrent workers
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go worker(urlChan, timeout, *daysFlag, &wg)
+		go worker(urlChan, timeout, *daysFlag, *checkHealthFlag, &wg)
 	}
 
 	// Send URLs to the workers
