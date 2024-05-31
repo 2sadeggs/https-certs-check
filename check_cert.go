@@ -13,7 +13,7 @@ import (
 )
 
 // checkCertExpiry retrieves the certificate from the provided URL and checks its validity period.
-func checkCertExpiry(url string) error {
+func checkCertExpiry(url string, timeout time.Duration) error {
 	// Create an HTTP client with a custom transport and timeout
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -21,7 +21,7 @@ func checkCertExpiry(url string) error {
 				InsecureSkipVerify: true, // We don't need to verify the server's certificate
 			},
 		},
-		Timeout: 3 * time.Second, // Set a timeout for the HTTP client
+		Timeout: timeout, // Set a timeout for the HTTP client
 	}
 
 	// Make a request to the URL
@@ -86,11 +86,11 @@ func readURLsFromFile(filename string) ([]string, error) {
 }
 
 // worker function to check certificates concurrently
-func worker(urls <-chan string, wg *sync.WaitGroup) {
+func worker(urls <-chan string, timeout time.Duration, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for url := range urls {
 		fmt.Printf("Checking certificate for %s...\n", url)
-		if err := checkCertExpiry(url); err != nil {
+		if err := checkCertExpiry(url, timeout); err != nil {
 			fmt.Fprintf(os.Stderr, "Error checking certificate for %s: %v\n", url, err)
 		}
 	}
@@ -100,7 +100,11 @@ func main() {
 	// Define command-line flags
 	fileFlag := flag.String("file", "uris.txt", "Path to the file containing the list of URLs (default: uris.txt)")
 	workersFlag := flag.Int("workers", 10, "Number of concurrent workers (default: 10)")
+	timeoutFlag := flag.Int("timeout", 3, "HTTP request timeout in seconds (default: 3)")
 	flag.Parse()
+
+	// Convert timeoutFlag to time.Duration
+	timeout := time.Duration(*timeoutFlag) * time.Second
 
 	// Read URLs from the file
 	urls, err := readURLsFromFile(*fileFlag)
@@ -119,7 +123,7 @@ func main() {
 	numWorkers := *workersFlag // Number of concurrent workers
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go worker(urlChan, &wg)
+		go worker(urlChan, timeout, &wg)
 	}
 
 	// Send URLs to the workers
