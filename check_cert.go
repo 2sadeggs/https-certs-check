@@ -46,8 +46,12 @@ func checkCertExpiry(url string, timeout time.Duration, daysUntilExpiry int) err
 	// Use the first certificate (typically the leaf certificate)
 	cert := certs[0]
 
+	// Calculate days remaining until expiry
+	now := time.Now().UTC()
+	expiry := cert.NotAfter.UTC()
+	daysRemaining := int(expiry.Sub(now).Hours() / 24)
+
 	// Check if the certificate is expiring within n days
-	daysRemaining := int(cert.NotAfter.Sub(time.Now()).Hours() / 24)
 	if daysRemaining <= daysUntilExpiry && daysRemaining >= 0 {
 		fmt.Printf("Certificate for %s is expiring in %d days: valid from %s to %s\n", url, daysRemaining, cert.NotBefore, cert.NotAfter)
 	}
